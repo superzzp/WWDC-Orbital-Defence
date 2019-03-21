@@ -1,5 +1,5 @@
 //
-//  Alien.swift
+//  UFO.swift
 //  RushToWWDC
 //
 //  Created by Anirudh Natarajan on 3/30/18.
@@ -8,7 +8,7 @@
 
 import UIKit
 
-public class Alien {
+public class UFO {
     
     var health : Int
     let power : Int
@@ -30,11 +30,11 @@ public class Alien {
         self.shotProbLow = shotProbLow
         self.shotProbHigh = shotProbHigh
         
-        // to randomize the alien's texture
+        // to randomize the UFO's texture
 //        if (Double(arc4random()) / 0xFFFFFFFF > 0.5){
-//            self.image = UIImage(named: "alien1")!
+//            self.image = UIImage(named: "UFO1")!
 //        } else {
-//            self.image = UIImage(named: "alien2")!
+//            self.image = UIImage(named: "UFO2")!
 //        }
         
         

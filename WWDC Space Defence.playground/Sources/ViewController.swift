@@ -4,18 +4,6 @@ import ARKit
 import SpriteKit
 import SceneKit
 
-//struct CollisionCategory: OptionSet {
-//    let rawValue: Int
-//
-//    static let bullet = CollisionCategory(rawValue: 4)
-//    static let UFO = CollisionCategory(rawValue : 8)
-//}
-
-
-//enum BitMaskCategory: Int {
-//    case bullet = 2
-//    case target = 3
-//}
 
 struct PhysicsMask {
     static let playerBullet = 0
@@ -33,10 +21,12 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
     
     var sceneView: ARSCNView!
     var plusButton: UIButton!
-    var aliens = [AlienNode]()
+    var UFOs = [UFONode]()
     var lasers = [LaserNode]()
     
     //UI
+    
+    var groundNode : SKLabelNode!
     var scoreNode : SKLabelNode!
     var livesNode : SKLabelNode!
     var radarNode : SKShapeNode!
@@ -110,11 +100,52 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         
     }
     
-    //MARK: GameDelegate Functions
+    //add a portal when user tap on the ground
+    //portal will contain the universe in it, start the game when user walk in the portal
+    func addPortal(hitTestResult: ARHitTestResult) {
+        let portalScene = SCNScene(named: "Portal.scn")
+        let portalNode = portalScene!.rootNode.childNode(withName: "Portal", recursively: false)!
+        let transform = hitTestResult.worldTransform
+        let planeXposition = transform.columns.3.x
+        let planeYposition = transform.columns.3.y
+        let planeZposition = transform.columns.3.z
+        portalNode.position =  SCNVector3(planeXposition, planeYposition, planeZposition)
+        self.sceneView.scene.rootNode.addChildNode(portalNode)
+        self.addPlane(nodeName: "roof", portalNode: portalNode, imageName: "top")
+        self.addPlane(nodeName: "floor", portalNode: portalNode, imageName: "bottom")
+        self.addWalls(nodeName: "backWall", portalNode: portalNode, imageName: "back")
+        self.addWalls(nodeName: "sideWallA", portalNode: portalNode, imageName: "sideA")
+        self.addWalls(nodeName: "sideWallB", portalNode: portalNode, imageName: "sideB")
+        self.addWalls(nodeName: "sideDoorA", portalNode: portalNode, imageName: "sideDoorA")
+        self.addWalls(nodeName: "sideDoorB", portalNode: portalNode, imageName: "sideDoorB")
+        self.game.portalCreated = true
+        //self.game.gameStart = true
+    }
     
+    
+    //helper function for addPortal(), add walls for the portal
+    //set the mask to be transparent, and set the wall behind it to render after the mask, so that the color of the mask and wall will mix together
+    func addWalls(nodeName: String, portalNode: SCNNode, imageName: String) {
+        let child = portalNode.childNode(withName: nodeName, recursively: true)
+        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
+        child?.renderingOrder = 200
+        if let mask = child?.childNode(withName: "mask", recursively: false) {
+            mask.geometry?.firstMaterial?.transparency = 0.000001
+        }
+    }
+    
+    //helper function for addPortal(), add floor and ceiling for the portal
+    func addPlane(nodeName: String, portalNode: SCNNode, imageName: String) {
+        let child = portalNode.childNode(withName: nodeName, recursively: true)
+        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
+        child?.renderingOrder = 200
+    }
+    
+    
+    //GameDelegate Functions
     func scoreDidChange() {
-        scoreNode.attributedText = NSMutableAttributedString(string: "Enemies: \(game.totalAliens - game.score)", attributes: stringAttributes)
-        if game.score >= game.totalAliens {
+        scoreNode.attributedText = NSMutableAttributedString(string: "Enemies: \(game.totalUFOs - game.score)", attributes: stringAttributes)
+        if game.score >= game.totalUFOs {
             game.winLoseFlag = true
             showFinish()
         }
@@ -231,7 +262,11 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         // setup the UI
         let size = sceneView.bounds
         
-        scoreNode = SKLabelNode(attributedText: NSAttributedString(string: "Enemies: \(game.totalAliens - game.score)", attributes: stringAttributes))
+        groundNode = SKLabelNode(attributedText: NSAttributedString(string: "Ground is detected!", attributes: stringAttributes))
+        groundNode.alpha = 1
+
+        
+        scoreNode = SKLabelNode(attributedText: NSAttributedString(string: "Enemies: \(game.totalUFOs - game.score)", attributes: stringAttributes))
         scoreNode.alpha = 1
         
         var i = 0
@@ -241,12 +276,19 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
             healthEmoji += "♥️"
         }
         
+        
         livesNode = SKLabelNode(attributedText: NSAttributedString(string: "Health: \(healthEmoji)", attributes: stringAttributes))
         livesNode.alpha = 1
         
+        
+        
+
         crosshair = SKSpriteNode(imageNamed: "plus.png")
         crosshair.size = CGSize(width: 25, height: 25)
         crosshair.alpha = 1
+        
+        groundNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 90, y: 40 + sidePadding)
+        groundNode.horizontalAlignmentMode = .center
         
         scoreNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 80, y: 30 + sidePadding)
         scoreNode.horizontalAlignmentMode = .center
@@ -257,6 +299,7 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         sceneView.overlaySKScene?.addChild(scoreNode)
         sceneView.overlaySKScene?.addChild(livesNode)
         sceneView.overlaySKScene?.addChild(crosshair)
+        sceneView.overlaySKScene?.addChild(groundNode)
     }
     
     
@@ -281,6 +324,17 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
     
     
     @objc func handleTap(sender: UITapGestureRecognizer) {
+        
+        guard let sceneView = sender.view as? ARSCNView else {return}
+        let touchLocation = sender.location(in: sceneView)
+        let hitTestResult = sceneView.hitTest(touchLocation, types: .existingPlaneUsingExtent)
+        if !hitTestResult.isEmpty && game.portalCreated == nil {
+            self.addPortal(hitTestResult: hitTestResult.first!)
+        } else {
+            ////
+        }
+
+        
         
         if(game.playerCanShoot()){
 //            guard let sceneView = sender.view as? ARSCNView else {return}
@@ -468,11 +522,11 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
     }
     
     
-    private func spawnAlien(alien: Alien){
+    private func spawnUFO(UFO: UFO){
         let pov = sceneView.pointOfView!
         let y = (Float(arc4random_uniform(60)) - 29) * 0.01 // Random Y value between -0.3 and 0.3
         
-        //Random X and Z values for the alien
+        //Random X and Z values for the UFO
         let xRad = ((Float(arc4random_uniform(361)) - 180)/180) * Float.pi
         let zRad = ((Float(arc4random_uniform(361)) - 180)/180) * Float.pi
         let length = Float(arc4random_uniform(6) + 4) * -0.3
@@ -480,10 +534,10 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         let z = length * cos(zRad)
         let position = SCNVector3Make(x, y, z)
         let worldPosition = pov.convertPosition(position, to: nil)
-        let alienNode = AlienNode(alien: alien, position: worldPosition, cameraPosition: pov.position)
+        let UFONode1 = UFONode(UFO: UFO, position: worldPosition, cameraPosition: pov.position)
         
-        aliens.append(alienNode)
-        sceneView.scene.rootNode.addChildNode(alienNode.node)
+        UFOs.append(UFONode1)
+        sceneView.scene.rootNode.addChildNode(UFONode1.node)
     }
     
     
@@ -496,48 +550,65 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
 
 //MARK: AR SceneView Delegate
 extension ViewController {
+    
+    public func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+        guard anchor is ARPlaneAnchor else {return}
+        DispatchQueue.main.async {
+            self.groundNode.isHidden = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now()+4) {
+            self.groundNode.isHidden = true
+        }
+    }
+    
+    
+    
+    
     public func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        
+        guard game.gameStart != nil else {return}
+        
         guard game.winLoseFlag == nil else { return }
         
-        // Let Game spawn an alien
-        if let alien = game.spawnAlien(numAliens: aliens.count) {
-            spawnAlien(alien: alien)
+        // Let Game spawn an UFO
+        if let UFO = game.spawnUFO(numUFOs: UFOs.count) {
+            spawnUFO(UFO: UFO)
         }
         
-        for (i, alien) in aliens.enumerated().reversed() {
+        for (i, UFO) in UFOs.enumerated().reversed() {
             
-            // If the alien no longer exists, remove it from the list
-            guard alien.node.parent != nil else {
-                aliens.remove(at: i)
+            // If the UFO no longer exists, remove it from the list
+            guard UFO.node.parent != nil else {
+                UFOs.remove(at: i)
                 continue
             }
             
-            // move the alien towards to player
-            if alien.move(towardsPosition: sceneView.pointOfView!.position) == false {
-                // if the alien can't move closer, it crashes into the player
-                alien.node.removeFromParentNode()
-                aliens.remove(at: i)
-                game.health -= alien.alien.health
+            // move the UFO towards to player
+            if UFO.move(towardsPosition: sceneView.pointOfView!.position) == false {
+                // if the UFO can't move closer, it crashes into the player
+                UFO.node.removeFromParentNode()
+                UFOs.remove(at: i)
+                game.health -= UFO.UFO.health
             }else {
-                if alien.alien.shouldShoot() {
-                    fireLaser(fromNode: alien.node, type: .enemy)
+                if UFO.UFO.shouldShoot() {
+                    fireLaser(fromNode: UFO.node, type: .enemy)
                 }
             }
         }
         
-//        // Draw aliens on the radar as an XZ Plane
+//        // Draw UFOs on the radar as an XZ Plane
 //        for (i, blip) in radarNode.children.enumerated() {
-//            if i < aliens.count {
-//                let alien = aliens[i]
+//            if i < UFOs.count {
+//                let UFO = UFOs[i]
 //                blip.alpha = 1
-//                let relativePosition = sceneView.pointOfView!.convertPosition(alien.node.position, from: nil)
+//                let relativePosition = sceneView.pointOfView!.convertPosition(UFO.node.position, from: nil)
 //                var x = relativePosition.x * 10
 //                var y = relativePosition.z * -10
 //                if x >= 0 { x = min(x, 35) } else { x = max(x, -35)}
 //                if y >= 0 { y = min(y, 35) } else { y = max(y, -35)}
 //                blip.position = CGPoint(x: CGFloat(x), y: CGFloat(y))
 //            }else{
-//                // If the alien hasn't spawned yet, hide the blip
+//                // If the UFO hasn't spawned yet, hide the blip
 //                blip.alpha = 0
 //            }
 //

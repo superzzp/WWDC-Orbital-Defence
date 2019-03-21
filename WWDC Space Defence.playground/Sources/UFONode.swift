@@ -3,18 +3,18 @@
 import ARKit
 import UIKit
 
-public class AlienNode : SCNNodeContainer{
+public class UFONode : SCNNodeContainer{
     
     var node : SCNNode!
-    var alien : Alien
+    var UFO : UFO
     var lastAxis = SCNVector3Make(0, 0, 0)
     
     var spawnCount = 0
     
-    // setup initial alien values
-    init(alien: Alien, position: SCNVector3, cameraPosition: SCNVector3) {
+    // setup initial UFO values
+    init(UFO: UFO, position: SCNVector3, cameraPosition: SCNVector3) {
 
-        self.alien = alien
+        self.UFO = UFO
         self.node = createNode()
         self.node.position = position
         self.node.rotation = SCNVector4Make(0, 1, 0, 0)
@@ -27,7 +27,7 @@ public class AlienNode : SCNNodeContainer{
         }
     }
     
-    // returns what angle the alien has to rotate to face the given position
+    // returns what angle the UFO has to rotate to face the given position
     func getXZRotation(towardsPosition toPosition: SCNVector3) -> Float {
         
         // creates the normalized vector for the position
@@ -35,7 +35,7 @@ public class AlienNode : SCNNodeContainer{
         unitDistance.y = 0
         unitDistance = unitDistance.normalized()
         
-        // creates the normalized vector for the alien
+        // creates the normalized vector for the UFO
         var unitDirection = self.node.convertPosition(SCNVector3Make(0, 0, -1), to: nil) - self.node.position
         unitDirection.y = 0
         unitDirection = unitDirection.normalized()
@@ -62,10 +62,10 @@ public class AlienNode : SCNNodeContainer{
     
     func move(towardsPosition toPosition : SCNVector3) -> Bool{
         
-        // distance between alien and the position
+        // distance between UFO and the position
         let deltaPos = (toPosition - node.position)
         
-        // if alien is too close to move, it won't
+        // if UFO is too close to move, it won't
         guard deltaPos.length() > 0.05 else { return false }
         let normDeltaPos = deltaPos.normalized()
         
@@ -75,14 +75,14 @@ public class AlienNode : SCNNodeContainer{
         // distance on XZ plane
         let length = deltaPos.xzLength()
         
-        // if alien is not in the "goldilocks zone", move towards the player
-        // if alien is really close to the player, it crashes into the player
+        // if UFO is not in the "goldilocks zone", move towards the player
+        // if UFO is really close to the player, it crashes into the player
         if length > 0.5 || length < 0.1 {
             node.position.x += normDeltaPos.x/250
             node.position.z += normDeltaPos.z/250
-            alien.closeQuarters = false
+            UFO.closeQuarters = false
         }else{
-            alien.closeQuarters = true
+            UFO.closeQuarters = true
         }
         
         // angle it must rotate to face player
