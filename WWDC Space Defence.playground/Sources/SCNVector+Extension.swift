@@ -23,8 +23,6 @@
 import Foundation
 import SceneKit
 
-// for simplicity sake
-
 extension SCNVector3
 {
     /**

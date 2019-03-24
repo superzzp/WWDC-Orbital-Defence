@@ -1,9 +1,7 @@
-import Foundation
 import UIKit
 import ARKit
 import SpriteKit
 import SceneKit
-
 
 struct PhysicsMask {
     static let playerBullet = 0
@@ -20,20 +18,22 @@ enum LaserType  {
 public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate, SCNPhysicsContactDelegate,GameDelegate {
     
     var sceneView: ARSCNView!
-    var plusButton: UIButton!
     var UFOs = [UFONode]()
     var lasers = [LaserNode]()
+    var portalPosition = SCNVector3(x: 0, y: 0, z: 0)
+    
+    //Timer
+    var clockUpdateTime: TimeInterval = 0
     
     //UI
-    
     var groundNode : SKLabelNode!
     var scoreNode : SKLabelNode!
     var livesNode : SKLabelNode!
-    var radarNode : SKShapeNode!
-    var crosshair: SKSpriteNode!
+    var timerNode : SKLabelNode!
+    var plusButton: UIButton!
     let sidePadding : CGFloat = 5
 
-    //font
+    //Unified Font
     lazy var paragraphStyle : NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
         style.alignment = NSTextAlignment.left
@@ -45,6 +45,32 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
     var bulletSpeed: Float = 50
     let session = ARSession()
     public var game = Game()
+    public var animation = Animation()
+    
+    
+    //GameDelegate Functions
+    func scoreDidChange() {
+        scoreNode.attributedText = NSMutableAttributedString(string: "Scores: \(game.score)", attributes: stringAttributes)
+        if game.score >= game.totalUFOs {
+            game.winLoseFlag = true
+            showFinish()
+        }
+    }
+    
+    func healthDidChange() {
+        // change the number to emojis
+        var i = 0
+        var healthEmoji = ""
+        while i<game.health {
+            i = i+1
+            healthEmoji += "♥️"
+        }
+        livesNode.attributedText = NSAttributedString(string: "Health: \(healthEmoji)", attributes: stringAttributes)
+        if game.health <= 0 {
+            game.winLoseFlag = false
+            showFinish()
+        }
+    }
     
     override public func viewDidLoad() {
         super.viewDidLoad()
@@ -63,7 +89,7 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         sceneView.session.delegate = self
         self.view = sceneView
         
-        sceneView.debugOptions = [ARSCNDebugOptions.showWorldOrigin,ARSCNDebugOptions.showFeaturePoints]
+        sceneView.debugOptions = [ARSCNDebugOptions.showWorldOrigin]
         sceneView.showsStatistics = true
         sceneView.autoenablesDefaultLighting = true
         
@@ -77,196 +103,26 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         sceneView.overlaySKScene = SKScene(size: sceneView.bounds.size)
         sceneView.overlaySKScene?.scaleMode = .resizeFill
         
-        
-        
         let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(handleTap(sender:)))
         
         self.sceneView.addGestureRecognizer(tapGestureRecognizer)
         
-        //create universe map and add its physics
-        createUniverse()
-        
-        //populate 3 UFOs for testing
-        addTargets()
-        
-        //add aiming cross indication
-        addAimingCrossButton()
-        
         //Setup labels
         setupLabels()
-        
-//        //add star particles
-//        sceneView.scene.rootNode.addParticleSystem(SCNParticleSystem(named: "starsParticle", inDirectory: "/")!)
-        
-    }
-    
-    //add a portal when user tap on the ground
-    //portal will contain the universe in it, start the game when user walk in the portal
-    func addPortal(hitTestResult: ARHitTestResult) {
-        let portalScene = SCNScene(named: "Portal.scn")
-        let portalNode = portalScene!.rootNode.childNode(withName: "Portal", recursively: false)!
-        let transform = hitTestResult.worldTransform
-        let planeXposition = transform.columns.3.x
-        let planeYposition = transform.columns.3.y
-        let planeZposition = transform.columns.3.z
-        portalNode.position =  SCNVector3(planeXposition, planeYposition, planeZposition)
-        self.sceneView.scene.rootNode.addChildNode(portalNode)
-        self.addPlane(nodeName: "roof", portalNode: portalNode, imageName: "top")
-        self.addPlane(nodeName: "floor", portalNode: portalNode, imageName: "bottom")
-        self.addWalls(nodeName: "backWall", portalNode: portalNode, imageName: "back")
-        self.addWalls(nodeName: "sideWallA", portalNode: portalNode, imageName: "sideA")
-        self.addWalls(nodeName: "sideWallB", portalNode: portalNode, imageName: "sideB")
-        self.addWalls(nodeName: "sideDoorA", portalNode: portalNode, imageName: "sideDoorA")
-        self.addWalls(nodeName: "sideDoorB", portalNode: portalNode, imageName: "sideDoorB")
-        self.game.portalCreated = true
-        //self.game.gameStart = true
-    }
-    
-    
-    //helper function for addPortal(), add walls for the portal
-    //set the mask to be transparent, and set the wall behind it to render after the mask, so that the color of the mask and wall will mix together
-    func addWalls(nodeName: String, portalNode: SCNNode, imageName: String) {
-        let child = portalNode.childNode(withName: nodeName, recursively: true)
-        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
-        child?.renderingOrder = 200
-        if let mask = child?.childNode(withName: "mask", recursively: false) {
-            mask.geometry?.firstMaterial?.transparency = 0.000001
-        }
-    }
-    
-    //helper function for addPortal(), add floor and ceiling for the portal
-    func addPlane(nodeName: String, portalNode: SCNNode, imageName: String) {
-        let child = portalNode.childNode(withName: nodeName, recursively: true)
-        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
-        child?.renderingOrder = 200
-    }
-    
-    
-    //GameDelegate Functions
-    func scoreDidChange() {
-        scoreNode.attributedText = NSMutableAttributedString(string: "Enemies: \(game.totalUFOs - game.score)", attributes: stringAttributes)
-        if game.score >= game.totalUFOs {
-            game.winLoseFlag = true
-            showFinish()
-        }
-    }
-    
-    func healthDidChange() {
-        
-        // change the number to emojis
-        var i = 0
-        var healthEmoji = ""
-        while i<game.health {
-            i = i+1
-            healthEmoji += "♥️"
-        }
-        livesNode.attributedText = NSAttributedString(string: "Health: \(healthEmoji)", attributes: stringAttributes)
-        if game.health <= 0 {
-            game.winLoseFlag = false
-            showFinish()
-        }
-    }
-    
-    //create the universe and planet nodes, and apply rotation and revolution
-    func createUniverse(){
-        let sun = SCNSphere(radius: 0.13)
-        let sunNode = createPlanetNode(geometry: sun, position: SCNVector3(-1,0,0), diffuse: UIImage.init(named: "sun diffuse.jpg") , specular: nil, emission: nil, normal: nil)
-        sunNode.addParticleSystem(SCNParticleSystem(named: "sparksParticle", inDirectory: "/")!)
-        
-        let earthParentNode = SCNNode()
-        earthParentNode.position = SCNVector3(-1,0,0)
-        
-        //node for earth, around the sun
-        let earth = SCNSphere(radius: 0.06)
-        let earthNode = createPlanetNode(geometry: earth, position: SCNVector3(0.6,0,0), diffuse: UIImage.init(named: "earth diffuse.jpg") , specular: UIImage.init(named: "earth specular"), emission: UIImage.init(named: "earth emission"), normal: UIImage.init(named: "earth normal"))
-        
-        let moonParentNode = SCNNode()
-        moonParentNode.position = SCNVector3(0.6,0,0)
-        
-        let moon = SCNSphere(radius: 0.025)
-        let moonNode = createPlanetNode(geometry: moon, position: SCNVector3(0.15,0,0), diffuse: UIImage(named: "moon diffuse.jpg") , specular: nil, emission: nil, normal: nil)
-        
-        // node for venus, around the sun
-        // let venus = SCNSphere(radius: 0.1)
-        // let venusNode = createPlanetNode(geometry: venus, position: SCNVector3(0.6, 0, 0), diffuse: nil, specular: nil, emission: nil, normal: nil)
-        self.sceneView.scene.rootNode.addChildNode(sunNode)
-        self.sceneView.scene.rootNode.addChildNode(earthParentNode)
-        self.sceneView.scene.rootNode.addChildNode(moonParentNode)
-        
-        
-        earthParentNode.addChildNode(earthNode)
-        earthParentNode.addChildNode(moonParentNode)
-        moonParentNode.addChildNode(moonNode)
-        
-        
-        let earthParentRotate = rotateWithTime(time: 14)
-        let moonParentRotate = rotateWithTime(time:5)
-        let sunRotate = rotateWithTime(time: 8)
-        let earthRotate = rotateWithTime(time: 8)
-        let moonRotate = rotateWithTime(time: 6)
-        
-        //apply planets rotation
-        sunNode.runAction(sunRotate)
-        earthNode.runAction(earthRotate)
-        moonNode.runAction(moonRotate)
-        
-        //apply planets revolution
-        earthParentNode.runAction(earthParentRotate)
-        moonParentNode.runAction(moonParentRotate)
-    }
-    
-    //add an aiming cross and set it to be at the middle of the screen
-    func addAimingCrossButton(){
-        plusButton = UIButton(frame: CGRect(x: 100, y: 100, width: 100, height: 100))
-        self.view?.addSubview(plusButton)
 
-        let plusButtonImg = UIImage(named: "plus.png")
-        plusButton.translatesAutoresizingMaskIntoConstraints = false
-
-
-        plusButton.backgroundColor = nil
-        plusButton.setImage(plusButtonImg, for: UIControl.State.normal)
-
-
-        NSLayoutConstraint(item: plusButton, attribute: NSLayoutConstraint.Attribute.centerX, relatedBy: NSLayoutConstraint.Relation.equal, toItem: view, attribute: NSLayoutConstraint.Attribute.centerX, multiplier: 1, constant: 0).isActive = true
-
-        NSLayoutConstraint(item: plusButton, attribute: NSLayoutConstraint.Attribute.centerY, relatedBy: NSLayoutConstraint.Relation.equal, toItem: view, attribute: NSLayoutConstraint.Attribute.centerY, multiplier: 1, constant: 0).isActive = true
+        hideAllGameLabels()
     }
-    
-//    func addLabel(){
-//        let planeIndiLabel = UILabel(frame: CGRect(x: 100, y: 100, width: 20, height: 10))
-//        self.view?.addSubview(planeIndiLabel)
-//
-//        planeIndiLabel.text = "plane detected!"
-//        planeIndiLabel.translatesAutoresizingMaskIntoConstraints = false
-//
-//        planeIndiLabel.backgroundColor = nil
-//
-//        NSLayoutConstraint(item: planeIndiLabel, attribute: NSLayoutConstraint.Attribute.centerX, relatedBy: NSLayoutConstraint.Relation.equal, toItem: view, attribute: NSLayoutConstraint.Attribute.centerX, multiplier: 1, constant: 0).isActive = true
-//
-//
-//
-////        stackView.translatesAutoresizingMaskIntoConstraints = false
-////
-////        stackView.addConstraint(NSLayoutConstraint(item: stackView, attribute: .trailing, relatedBy: .equal, toItem: stackView, attribute: .trailing, multiplier: 1, constant: 0))
-////        stackView.addConstraint(NSLayoutConstraint(item: stackView, attribute: .leading, relatedBy: .equal, toItem: stackView, attribute: .leading, multiplier: 1, constant: 0))
-//
-//        NSLayoutConstraint(item: planeIndiLabel, attribute: .top, relatedBy: .equal, toItem: view, attribute: .bottom, multiplier: 1, constant: 0).isActive = true
-////        stackView.addConstraint(NSLayoutConstraint(item: stackView, attribute: .height, relatedBy: .equal, toItem: nil, attribute: .notAnAttribute,multiplier: 1,
-////                                                   constant: 131))
-//
-//    }
     
     private func setupLabels() {
         
         // setup the UI
-        let size = sceneView.bounds
+        addAimingCrossButton()
         
         groundNode = SKLabelNode(attributedText: NSAttributedString(string: "Ground is detected!", attributes: stringAttributes))
         groundNode.alpha = 1
-
         
-        scoreNode = SKLabelNode(attributedText: NSAttributedString(string: "Enemies: \(game.totalUFOs - game.score)", attributes: stringAttributes))
+        
+        scoreNode = SKLabelNode(attributedText: NSAttributedString(string: "Scores: \(game.score)", attributes: stringAttributes))
         scoreNode.alpha = 1
         
         var i = 0
@@ -280,30 +136,196 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         livesNode = SKLabelNode(attributedText: NSAttributedString(string: "Health: \(healthEmoji)", attributes: stringAttributes))
         livesNode.alpha = 1
         
+        timerNode = SKLabelNode(attributedText: NSAttributedString(string: "Time Remain: \(game.gameDuration)", attributes: stringAttributes))
+        timerNode.alpha = 1
         
         
-
-        crosshair = SKSpriteNode(imageNamed: "plus.png")
-        crosshair.size = CGSize(width: 25, height: 25)
-        crosshair.alpha = 1
+        groundNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 10, y: 80 + sidePadding)
         
-        groundNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 90, y: 40 + sidePadding)
         groundNode.horizontalAlignmentMode = .center
         
         scoreNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 80, y: 30 + sidePadding)
         scoreNode.horizontalAlignmentMode = .center
+        
         livesNode.position = CGPoint(x: sidePadding, y: 30 + sidePadding)
         livesNode.horizontalAlignmentMode = .left
-        crosshair.position = CGPoint(x: size.midX, y: size.midY)
+        
+        timerNode.position = CGPoint(x: sidePadding + livesNode.frame.width + 60, y: 70 + sidePadding)
+        timerNode.horizontalAlignmentMode = .center
         
         sceneView.overlaySKScene?.addChild(scoreNode)
         sceneView.overlaySKScene?.addChild(livesNode)
-        sceneView.overlaySKScene?.addChild(crosshair)
         sceneView.overlaySKScene?.addChild(groundNode)
+        sceneView.overlaySKScene?.addChild(timerNode)
     }
     
     
-    //create a new node with an planet attached, with geometry, position, and materials
+    // helper function for setupLabels(), add an aiming cross and set it to be at the middle of the screen
+    func addAimingCrossButton(){
+        plusButton = UIButton(frame: CGRect(x: 100, y: 100, width: 100, height: 100))
+        self.view?.addSubview(plusButton)
+
+        let plusButtonImg = UIImage(named: "plus.png")
+        plusButton.translatesAutoresizingMaskIntoConstraints = false
+
+        plusButton.backgroundColor = nil
+        plusButton.setImage(plusButtonImg, for: UIControl.State.normal)
+
+        NSLayoutConstraint(item: plusButton, attribute: NSLayoutConstraint.Attribute.centerX, relatedBy: NSLayoutConstraint.Relation.equal, toItem: view, attribute: NSLayoutConstraint.Attribute.centerX, multiplier: 1, constant: 0).isActive = true
+
+        NSLayoutConstraint(item: plusButton, attribute: NSLayoutConstraint.Attribute.centerY, relatedBy: NSLayoutConstraint.Relation.equal, toItem: view, attribute: NSLayoutConstraint.Attribute.centerY, multiplier: 1, constant: 0).isActive = true
+    }
+    
+    
+    //helper function for setupLabels(), hide all game labels before game starts
+    func hideAllGameLabels() {
+        scoreNode.isHidden = true
+        livesNode.isHidden = true
+        plusButton.isHidden = true
+        timerNode.isHidden = true
+    }
+    
+    //helper function for setupLabels(), display all game labels after game starts
+    func displayAllGameLabels() {
+        scoreNode.isHidden = false
+        livesNode.isHidden = false
+        plusButton.isHidden = false
+        timerNode.isHidden = false
+    }
+    
+
+    //add a portal when user tap on the ground
+    //portal will contain the universe in it, start the game when user walk in the portal
+    func addPortal(hitTestResult: ARHitTestResult) {
+        let portalScene = SCNScene(named: "Portal.scn")
+        let portalNode = portalScene!.rootNode.childNode(withName: "Portal", recursively: false)!
+        let transform = hitTestResult.worldTransform
+        let planeXposition = transform.columns.3.x
+        let planeYposition = transform.columns.3.y
+        let planeZposition = transform.columns.3.z
+        portalNode.position =  SCNVector3(planeXposition, planeYposition, planeZposition)
+        
+        let portalRotate = SCNAction.rotateBy(x: 0, y: CGFloat(180.degreesToRadians), z: 0, duration: 0)
+        portalNode.runAction(portalRotate)
+        portalNode.name = "portal"
+        
+        self.sceneView.scene.rootNode.addChildNode(portalNode)
+        self.addPlane(nodeName: "roof", portalNode: portalNode, imageName: "top")
+        self.addPlane(nodeName: "floor", portalNode: portalNode, imageName: "bottom")
+        self.addWalls(nodeName: "backWall", portalNode: portalNode, imageName: "back")
+        self.addWalls(nodeName: "sideWallA", portalNode: portalNode, imageName: "sideA")
+        self.addWalls(nodeName: "sideWallB", portalNode: portalNode, imageName: "sideB")
+        self.addWalls(nodeName: "sideDoorA", portalNode: portalNode, imageName: "sideDoorA")
+        self.addWalls(nodeName: "sideDoorB", portalNode: portalNode, imageName: "sideDoorB")
+        
+        let pathway = portalNode.childNode(withName: "StargatePathway", recursively: false)
+        animation.animatePathwayOpacity(node: pathway!)
+        
+        self.game.hasPortal = true
+    
+        
+    }
+    
+    //Helper function for addPortal(), add walls for the portal
+    //set the mask to be transparent, and set the wall behind it to render after the mask,
+    //so both mask and walls will be transparent
+    func addWalls(nodeName: String, portalNode: SCNNode, imageName: String) {
+        let child = portalNode.childNode(withName: nodeName, recursively: true)
+        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
+        child?.renderingOrder = 200
+        if let mask = child?.childNode(withName: "mask", recursively: false) {
+            mask.geometry?.firstMaterial?.transparency = 0.000001
+        }
+    }
+    
+    // Helper function for addPortal(), add floor and ceiling for the portal
+    func addPlane(nodeName: String, portalNode: SCNNode, imageName: String) {
+        let child = portalNode.childNode(withName: nodeName, recursively: true)
+        child?.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "\(imageName).png")
+        child?.renderingOrder = 200
+    }
+    
+    // Create the universe and planet nodes, and apply rotation and revolution
+    func createUniverse(centerPos: SCNVector3){
+        let sun = SCNSphere(radius: 0.35)
+        let sunNode = createPlanetNode(geometry: sun, position: centerPos, diffuse: UIImage.init(named: "sun diffuse.jpg") , specular: nil, emission: nil, normal: nil)
+        sunNode.addParticleSystem(SCNParticleSystem(named: "sparksParticle", inDirectory: "/")!)
+        
+        
+        let earthParentNode = SCNNode()
+        earthParentNode.position = centerPos
+        
+        let jupiterParentNode = SCNNode()
+        jupiterParentNode.position = centerPos
+        
+        let saturnParentNode = SCNNode()
+        saturnParentNode.position = centerPos
+        
+        //node for earth, rotate around the sun
+        let earth = SCNSphere(radius: 0.08)
+        let earthNode = createPlanetNode(geometry: earth, position: SCNVector3(1.2,0,0), diffuse: UIImage.init(named: "earth diffuse.jpg") , specular: UIImage.init(named: "earth specular"), emission: UIImage.init(named: "earth emission"), normal: UIImage.init(named: "earth normal"))
+        
+        //node for moon, rotate around the earth
+        let moonParentNode = SCNNode()
+        moonParentNode.position = SCNVector3(1.2,0,0)
+        
+        let moon = SCNSphere(radius: 0.04)
+        let moonNode = createPlanetNode(geometry: moon, position: SCNVector3(0.3,0,0), diffuse: UIImage(named: "moon diffuse.jpg") , specular: nil, emission: nil, normal: nil)
+        
+        // node for Jupiter, rotate around the sun
+        // please bring me luck Jupiter
+        let jupiter = SCNSphere(radius: 0.14)
+        let jupiterNode = createPlanetNode(geometry: jupiter, position: SCNVector3(0, 0, 1.5), diffuse: UIImage(named: "jupiter diffuse.jpg"), specular: nil, emission: nil, normal: nil)
+        
+        // node for Saturn, rotate around the sun
+        // attach a ring node with saturn
+        let saturn = SCNSphere(radius: 0.13)
+        let saturnNode = createPlanetNode(geometry: saturn, position: SCNVector3(2.0, 0, 0), diffuse: UIImage(named: "saturn diffuse.jpg"), specular: nil, emission: nil, normal: nil)
+        
+        let loopNode = SCNNode(geometry: SCNBox(width: 0.52, height: 0.65, length: 0, chamferRadius: 0))
+        loopNode.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "saturn ring.png")
+        loopNode.rotation = SCNVector4(-0.5, -0.05, 0, 5)
+        saturnNode.addChildNode(loopNode)
+        
+        self.sceneView.scene.rootNode.addChildNode(sunNode)
+        self.sceneView.scene.rootNode.addChildNode(earthParentNode)
+        self.sceneView.scene.rootNode.addChildNode(moonParentNode)
+        self.sceneView.scene.rootNode.addChildNode(jupiterParentNode)
+        self.sceneView.scene.rootNode.addChildNode(saturnParentNode)
+        
+        earthParentNode.addChildNode(earthNode)
+        earthParentNode.addChildNode(moonParentNode)
+        moonParentNode.addChildNode(moonNode)
+        jupiterParentNode.addChildNode(jupiterNode)
+        saturnParentNode.addChildNode(saturnNode)
+        
+        let earthParentRotate = rotateWithTime(time: 28)
+        let moonParentRotate = rotateWithTime(time:15)
+        let jupiterParentRotate = rotateWithTime(time: 34)
+        let saturnParentRotate = rotateWithTime(time: 30)
+        
+        let sunRotate = rotateWithTime(time: 24)
+        let earthRotate = rotateWithTime(time: 24)
+        let moonRotate = rotateWithTime(time: 18)
+        let jupiterRotate = rotateWithTime(time: 24)
+        let saturnRotate = rotateWithTime(time: 24)
+        
+        //apply planets rotation
+        sunNode.runAction(sunRotate)
+        earthNode.runAction(earthRotate)
+        moonNode.runAction(moonRotate)
+        jupiterNode.runAction(jupiterRotate)
+        saturnNode.runAction(saturnRotate)
+        
+        //apply planets revolution
+        earthParentNode.runAction(earthParentRotate)
+        moonParentNode.runAction(moonParentRotate)
+        jupiterParentNode.runAction(jupiterParentRotate)
+        saturnParentNode.runAction(saturnParentRotate)
+        
+    }
+    
+    // Create a new node with an planet attached, with geometry, position, and materials
     func createPlanetNode(geometry: SCNGeometry, position: SCNVector3, diffuse: UIImage?, specular: UIImage?, emission: UIImage?, normal: UIImage?) -> SCNNode {
         let newPlanet = SCNNode(geometry: geometry)
         newPlanet.position = position
@@ -314,53 +336,27 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         return newPlanet
     }
     
-    //create an SCNAction to let the planet rotate, input time/cycle
+    // Create an SCNAction to let the planet rotate, with input of time per cycle
     func rotateWithTime(time: TimeInterval) -> SCNAction {
         let rotateAction = SCNAction.rotateBy(x: 0, y: CGFloat(360.degreesToRadians), z: 0, duration: time)
         let rotateForeverAct = SCNAction.repeatForever(rotateAction)
         return rotateForeverAct
     }
-    
-    
-    
+
+    // If player tap on ground, first create a portal
+    // If player can shoot, shoot bullet
     @objc func handleTap(sender: UITapGestureRecognizer) {
         
         guard let sceneView = sender.view as? ARSCNView else {return}
         let touchLocation = sender.location(in: sceneView)
         let hitTestResult = sceneView.hitTest(touchLocation, types: .existingPlaneUsingExtent)
-        if !hitTestResult.isEmpty && game.portalCreated == nil {
+        if !hitTestResult.isEmpty && game.hasPortal == nil {
             self.addPortal(hitTestResult: hitTestResult.first!)
-        } else {
-            ////
         }
-
-        
         
         if(game.playerCanShoot()){
-//            guard let sceneView = sender.view as? ARSCNView else {return}
             guard let pointOfView = sceneView.pointOfView else {return}
-//            let transform = pointOfView.transform
-//            let orientation = SCNVector3(-transform.m31, -transform.m32, -transform.m33)
-//            let location = SCNVector3(transform.m41, transform.m42, transform.m43)
-//            let position = orientation + location
-//            let bullet = SCNNode(geometry: SCNSphere(radius: 0.1))
-//            bullet.geometry?.firstMaterial?.diffuse.contents = UIColor.red
-//            bullet.position = position
-//            //let body = SCNPhysicsBody(type: .static, shape: )
-//            let body = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(node: bullet, options: nil))
-//            body.isAffectedByGravity = false
-//            bullet.physicsBody = body
-//            bullet.physicsBody?.categoryBitMask = PhysicsMask.playerBullet
-//            bullet.physicsBody?.contactTestBitMask = PhysicsMask.enemy
-            
             fireLaser(fromNode: pointOfView, type: .player)
-        
-            //self.sceneView.scene.rootNode.addChildNode(bullet)
-
-//            bullet.runAction(
-//                SCNAction.sequence([SCNAction.wait(duration: 2.0),
-//                                    SCNAction.removeFromParentNode()])
-//            )
             
         }
     }
@@ -368,6 +364,7 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
     func fireLaser(fromNode node: SCNNode, type: LaserType){
         guard game.winLoseFlag == nil else { return }
         let pov = sceneView.pointOfView!
+        
         var position: SCNVector3
         var convertedPosition: SCNVector3
         var direction : SCNVector3
@@ -379,8 +376,6 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
             convertedPosition = node.convertPosition(position, to: nil)
             direction = pov.position - node.position
         default:
-            // play the sound effect
-            //self.playSoundEffect(ofType: .torpedo)
             // if player, shoot straight ahead
             position = SCNVector3Make(0, 0, -0.05)
             convertedPosition = node.convertPosition(position, to: nil)
@@ -392,79 +387,6 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         sceneView.scene.rootNode.addChildNode(laser.node)
     }
     
-    
-    func animateUFOWhenHit(node: SCNNode) {
-        let spin = CABasicAnimation(keyPath: "position")
-        spin.fromValue = node.presentation.position
-        spin.toValue = SCNVector3(node.presentation.position.x - 0.2 ,node.presentation.position.y - 0.2, node.presentation.position.z - 0.2)
-        spin.duration = 0.07
-        spin.repeatCount = 5
-        spin.autoreverses = true
-        node.addAnimation(spin, forKey: "postion")
-    }
-    
-
-    func addTargets() {
-        self.addUFO(x: 0.5, y: 0, z: 0.5)
-        self.addUFO(x: 0, y: 0, z: 0.5)
-        self.addUFO(x: -0.5, y: 0, z: 0.5)
-    }
-
-//
-    func addUFO(x: Float, y: Float, z: Float) {
-        let UFOScene = SCNScene(named: "nave.scn")
-        let UFONode = (UFOScene?.rootNode.childNode(withName: "Sphere", recursively: true))!
-        UFONode.position = SCNVector3(x,y,z)
-        UFONode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(node: UFONode, options: nil))
-//        UFONode.physicsBody?.categoryBitMask = BitMaskCategory.target.rawValue
-//        UFONode.physicsBody?.contactTestBitMask = BitMaskCategory.bullet.rawValue
-//        UFONode.physicsBody?.collisionBitMask = BitMaskCategory.bullet.rawValue
-        UFONode.physicsBody?.categoryBitMask = PhysicsMask.enemy
-        UFONode.physicsBody?.contactTestBitMask = PhysicsMask.playerBullet
-        UFONode.physicsBody?.isAffectedByGravity = false
-        sceneView.scene.rootNode.addChildNode(UFONode)
-    }
-    
-    
-//    public func physicsWorld(_ world: SCNPhysicsWorld, didBegin contact: SCNPhysicsContact) {
-//        let nodeA = contact.nodeA
-//        let nodeB = contact.nodeB
-//
-//        if nodeA.physicsBody?.categoryBitMask == BitMaskCategory.target.rawValue {
-//            self.Target = nodeA
-//            print("========213 test=========")
-//        } else if nodeB.physicsBody?.categoryBitMask == BitMaskCategory.target.rawValue {
-//            self.Target = nodeB
-//            print("========216 test=========")
-//        }
-//        let confetti = SCNParticleSystem(named: "fire", inDirectory: "/")
-//        confetti?.loops = false
-//        confetti?.particleLifeSpan = 4
-//        confetti?.emitterShape = Target?.geometry
-//        let confettiNode = SCNNode()
-//        confettiNode.addParticleSystem(confetti!)
-//        confettiNode.position = contact.contactPoint
-//        self.sceneView.scene.rootNode.addChildNode(confettiNode)
-//        Target?.removeFromParentNode()
-//    }
-    
-//    public func physicsWorld(_ world: SCNPhysicsWorld, didBegin contact: SCNPhysicsContact) {
-//        let maskA = contact.nodeA.physicsBody!.contactTestBitMask
-//        let maskB = contact.nodeB.physicsBody!.contactTestBitMask
-//
-//        switch(maskA, maskB){
-//        case (PhysicsMask.enemy, PhysicsMask.playerBullet):
-//            //self.playSoundEffect(ofType: .collision)
-//            hitEnemy(bullet: contact.nodeB, enemy: contact.nodeA)
-//            //self.playSoundEffect(ofType: .collision)
-//        case (PhysicsMask.playerBullet, PhysicsMask.enemy):
-//            //self.playSoundEffect(ofType: .collision)
-//            hitEnemy(bullet: contact.nodeA, enemy: contact.nodeB)
-//        default:
-//            break
-//        }
-//    }
-    
     public func physicsWorld(_ world: SCNPhysicsWorld, didBegin contact: SCNPhysicsContact) {
         let maskA = contact.nodeA.physicsBody!.contactTestBitMask
         let maskB = contact.nodeB.physicsBody!.contactTestBitMask
@@ -472,38 +394,46 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         switch(maskA, maskB) {
         case (PhysicsMask.enemy, PhysicsMask.playerBullet) :
             hitEnemy(bullet: contact.nodeA, enemy: contact.nodeB)
-        
         case (PhysicsMask.playerBullet, PhysicsMask.enemy) :
             hitEnemy(bullet: contact.nodeB, enemy: contact.nodeA)
-            
         default:
             break
         }
-        
     }
-    
-    func hitEnemy(bullet: SCNNode, enemy: SCNNode){
-        let fire = SCNParticleSystem(named: "fire", inDirectory: "/")
-        fire?.loops = false
-        fire?.particleLifeSpan = 4
-        fire?.emitterShape = enemy.geometry
-        
-        let fireNode = SCNNode()
-        fireNode.addParticleSystem(fire!)
-        //fireNode.scale = SCNVector3(x: 0.005, y: 0.005, z: 0.005)
-        fireNode.position = enemy.position
-        sceneView.scene.rootNode.addChildNode(fireNode)
-        
-        bullet.removeFromParentNode()
-        enemy.removeFromParentNode()
-        game.score += 1
+
+    // Apply animation and explosion particle to enemy node when hit
+    // Remove enemy and bullet from scene after animation is complete
+    func hitEnemy(bullet: SCNNode, enemy: SCNNode) {
+        // If enemy currently have no animation, continue
+        // So only one animations be applied to a node at a time
+        if (enemy.animationKeys.isEmpty) {
+            SCNTransaction.begin()
+            animation.animateUFOWhenHit(node: enemy)
+            SCNTransaction.completionBlock = {
+                let fire = SCNParticleSystem(named: "fire", inDirectory: "/")
+                fire?.loops = false
+                fire?.particleLifeSpan = 4
+                fire?.emitterShape = enemy.geometry
+                
+                let fireNode = SCNNode()
+                fireNode.addParticleSystem(fire!)
+                fireNode.scale = SCNVector3(x: 0.005, y: 0.005, z: 0.005)
+                fireNode.position = bullet.position
+                self.sceneView.scene.rootNode.addChildNode(fireNode)
+                
+                bullet.removeFromParentNode()
+                enemy.removeFromParentNode()
+                self.game.score += 1
+            }
+            SCNTransaction.commit()
+        }
     }
     
     
     private func showFinish() {
         guard let hasWon = game.winLoseFlag else { return }
         // present the AR text
-        let text = SCNText(string: hasWon ? "You Saved The Day! Onward to WWDC!" : "Aww, Try Again!", extrusionDepth: 0.5)
+        let text = SCNText(string: hasWon ? "You Saved The Universe! Onward to SWDC!" : "Yikes...Try Again!", extrusionDepth: 0.5)
         let material = SCNMaterial()
         material.diffuse.contents = hasWon ? UIColor.green : UIColor.red
         
@@ -539,36 +469,86 @@ public class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDeleg
         UFOs.append(UFONode1)
         sceneView.scene.rootNode.addChildNode(UFONode1.node)
     }
-    
-    
 }
 
-
-//func +(left: SCNVector3, right: SCNVector3) -> SCNVector3 {
-//    return SCNVector3Make(left.x + right.x, left.y + right.y, left.z + right.z)
-//}
-
-//MARK: AR SceneView Delegate
+//AR SceneView Delegate
 extension ViewController {
     
     public func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
-        guard anchor is ARPlaneAnchor else {return}
-        DispatchQueue.main.async {
-            self.groundNode.isHidden = false
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now()+4) {
-            self.groundNode.isHidden = true
+        
+        if (game.hasPortal == nil) {
+            guard anchor is ARPlaneAnchor else {return}
+            DispatchQueue.main.async {
+                self.groundNode.attributedText = NSMutableAttributedString(string: "Ground Detected! Tap on it to create Stargate!", attributes: self.stringAttributes)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                self.groundNode.attributedText = NSMutableAttributedString(string: "Tap On Ground To Create Stargate!", attributes: self.stringAttributes)
+            }
         }
     }
     
-    
-    
-    
     public func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        
+        // Return until player create a portal
+        guard game.hasPortal != nil else {return}
+        
+        // Guide player to walk into the portal after its creation
+        if (game.gameStart == nil) {
+            DispatchQueue.main.async {
+                self.groundNode.attributedText = NSMutableAttributedString(string: "Walk in Stargate to start the game!", attributes: self.stringAttributes)
+            }
+        }
+        
+        // After player walk into the portal, start the game
+        if ((game.gameStart == nil) && (sceneView.pointOfView!.position.z >= portalPosition.z + 1.5)) {
+            self.game.gameStart = true
+            groundNode.isHidden = true
+            displayAllGameLabels()
+            var portalNode = sceneView.scene.rootNode.childNode(withName: "portal", recursively: true)
+            
+            // Pull the player into the universe by moving portal forward
+            SCNTransaction.begin()
+            animation.animatePortalMovement(node: portalNode!)
+            SCNTransaction.completionBlock = {
+                portalNode = self.sceneView.scene.rootNode.childNode(withName: "portal", recursively: true)
+                self.portalPosition = portalNode!.position
+                
+                //set the center of the universe to be the center of the portal scene
+                let universeCenterPosition = SCNVector3Make(self.portalPosition.x, self.portalPosition.y + 1.5, self.portalPosition.z + 4.0)
+                
+                //create the universe
+                self.createUniverse(centerPos: universeCenterPosition)
+                
+                //add stars particle to the universe
+                let starsParticle = SCNParticleSystem(named: "starsParticle", inDirectory: "/")
+                let starsNode = SCNNode()
+                starsNode.position = universeCenterPosition
+                starsNode.addParticleSystem(starsParticle!)
+                
+            }
+            SCNTransaction.commit()
+        }
         
         guard game.gameStart != nil else {return}
         
         guard game.winLoseFlag == nil else { return }
+        
+        // Update the time indicator
+        // Player win the game after holding for 60 seconds
+        if(time > clockUpdateTime) {
+            //schedule the clockUpdateTime when system time is forward
+            clockUpdateTime = time + TimeInterval(1)
+            
+            game.gameDuration -= 1
+            DispatchQueue.main.async {
+                self.timerNode.attributedText = NSMutableAttributedString(string: "Time Remaining: \(self.game.gameDuration)", attributes: self.stringAttributes)
+            }
+            if(game.gameDuration == 0) {
+                game.winLoseFlag = true
+                showFinish()
+            }
+            
+        }
         
         // Let Game spawn an UFO
         if let UFO = game.spawnUFO(numUFOs: UFOs.count) {
@@ -595,24 +575,6 @@ extension ViewController {
                 }
             }
         }
-        
-//        // Draw UFOs on the radar as an XZ Plane
-//        for (i, blip) in radarNode.children.enumerated() {
-//            if i < UFOs.count {
-//                let UFO = UFOs[i]
-//                blip.alpha = 1
-//                let relativePosition = sceneView.pointOfView!.convertPosition(UFO.node.position, from: nil)
-//                var x = relativePosition.x * 10
-//                var y = relativePosition.z * -10
-//                if x >= 0 { x = min(x, 35) } else { x = max(x, -35)}
-//                if y >= 0 { y = min(y, 35) } else { y = max(y, -35)}
-//                blip.position = CGPoint(x: CGFloat(x), y: CGFloat(y))
-//            }else{
-//                // If the UFO hasn't spawned yet, hide the blip
-//                blip.alpha = 0
-//            }
-//
-//        }
         
         for (i, laser) in lasers.enumerated().reversed() {
             if laser.node.parent == nil {

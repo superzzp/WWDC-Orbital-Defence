@@ -48,12 +48,9 @@ public class UFONode : SCNNodeContainer{
     }
     
     private func createNode() -> SCNNode{
-        let UFOScene = SCNScene(named: "nave.scn")
+        let UFOScene = SCNScene(named: "UFOModel.scn")
         let UFONode = (UFOScene?.rootNode.childNode(withName: "Sphere", recursively: true))!
         UFONode.physicsBody = SCNPhysicsBody(type: .dynamic, shape: SCNPhysicsShape(node: UFONode, options: nil))
-//      static physics body so movement can be controlled manually
-//        UFONode.physicsBody?.categoryBitMask = PhysicsMask.enemy
-//        UFONode.physicsBody?.contactTestBitMask = PhysicsMask.playerBullet
         UFONode.physicsBody?.categoryBitMask = PhysicsMask.enemy
         UFONode.physicsBody?.contactTestBitMask = PhysicsMask.playerBullet
         UFONode.physicsBody?.isAffectedByGravity = false
@@ -75,7 +72,6 @@ public class UFONode : SCNNodeContainer{
         // distance on XZ plane
         let length = deltaPos.xzLength()
         
-        // if UFO is not in the "goldilocks zone", move towards the player
         // if UFO is really close to the player, it crashes into the player
         if length > 0.5 || length < 0.1 {
             node.position.x += normDeltaPos.x/250
@@ -97,6 +93,4 @@ public class UFONode : SCNNodeContainer{
         
         return true
     }
-    
-    
 }

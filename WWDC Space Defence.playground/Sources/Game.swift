@@ -3,12 +3,12 @@ import Foundation
 public class Game {
     
     var delegate : GameDelegate?
-    
-    var portalCreated: Bool? //whether the universe portal is created
+    var gameDuration = 60 //how long the player need to hold until winning
+    var hasPortal: Bool? //whether the universe portal is created
     var gameStart: Bool? //whether the game starts
     let cooldown = 0.3 // so the player can't spam bullets
     let power = 1 // how much damage the bullet does
-    var health = 5  { // how much health the player has
+    var health = 6  { // how much health the player has
         didSet{
             delegate?.healthDidChange()
         }
@@ -33,13 +33,11 @@ public class Game {
     let spawnProb : UInt32 = 2 // how often the UFO will actually be spawned
     public var shotFreq = 60 // how often it will attempt to shoot
     
-    public var totalUFOs = 10 // number of UFOs that must be killed to win
+    public var totalUFOs = 100 // number of UFOs that will be spawned
     let UFOPower = 1 // how much damage the UFO's bullet does
     let UFOHealth = 1 // how much health the UFO has
     
     var winLoseFlag : Bool? // whether the player won, lost, or still playing
-    
-    
     
     // current score
     var score = 0 {

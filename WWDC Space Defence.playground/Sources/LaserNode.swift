@@ -29,8 +29,6 @@ public class LaserNode: SCNNodeContainer{
         
         geometry.materials = [material]
         let sphereNode = SCNNode(geometry: geometry)
-        
-        // it has a static physics body so we can control it's movement manually
         sphereNode.physicsBody = SCNPhysicsBody(type: .static, shape: nil)
         sphereNode.physicsBody?.contactTestBitMask = type == .player ? PhysicsMask.enemy : PhysicsMask.player
         sphereNode.physicsBody?.isAffectedByGravity = false

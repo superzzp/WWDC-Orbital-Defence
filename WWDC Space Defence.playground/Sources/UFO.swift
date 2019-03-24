@@ -1,11 +1,3 @@
-//
-//  UFO.swift
-//  RushToWWDC
-//
-//  Created by Anirudh Natarajan on 3/30/18.
-//  Copyright © 2018 Anirudh Natarajan. All rights reserved.
-//
-
 import UIKit
 
 public class UFO {
@@ -29,15 +21,6 @@ public class UFO {
         self.shotFreq = shotFreq
         self.shotProbLow = shotProbLow
         self.shotProbHigh = shotProbHigh
-        
-        // to randomize the UFO's texture
-//        if (Double(arc4random()) / 0xFFFFFFFF > 0.5){
-//            self.image = UIImage(named: "UFO1")!
-//        } else {
-//            self.image = UIImage(named: "UFO2")!
-//        }
-        
-        
     }
     
     func shouldShoot() -> Bool {
